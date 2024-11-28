@@ -1,74 +1,73 @@
 (function(module) {
     "use strict";
 
-	var MarkdownToc = {},
-		cheerio = require('cheerio');
+    var MarkdownToc = {},
+        cheerio = require('cheerio');
 
-	MarkdownToc.parse = function(data, callback) {
-		var postContent = data.postData.content;
-		var titleRegexp = /<h(.)>(.*?)<\/h(.)>/gm;
-		var tocRegexp = /\[toc\]/mg;
+    MarkdownToc.parse = function(data, callback) {
+        var postContent = data.postData.content;
+        var titleRegexp = /<h([1-6])\s*.*?>(.*?)<\/h\1>/gm;
+        var tocRegexp = /\[toc\]/mg;
 
-		var titles = postContent.match(titleRegexp);
-		var toc = postContent.match(tocRegexp);
+        var titles = postContent.match(titleRegexp);
+        var tocMatch = postContent.match(tocRegexp);
 
-		if(titles && titles.length && toc && toc.length) {
+        if (!titles || !titles.length || !tocMatch || !tocMatch.length) {
+            return callback(null, data); // No titles or [toc] found, return as is
+        }
 
-			var tocContent = '<div class="toc">';
-			var ids = [];
-			var uls = {};
-			var parentNode = '';
-			var parentObject = {};
-			var $ = cheerio.load('<div class="toc"></div>');
-			titles.forEach(function (title) {
-				var str = title.replace(titleRegexp, '{"num":"$1","id":"$2"}');
-				var object = JSON.parse(str);
-				var id = object.id;
-				var current = '';
-				if(ids.indexOf(object.id) != -1) {
-					id = object.id+'-'+ids.length;
-				}
-				ids.push(id);
+        var ids = [];
+        var $ = cheerio.load('<div class="toc"></div>');
 
-				postContent = postContent.replace(title, '<h'+object.num+' id="'+id+'">'+object.id+'</h'+object.num+'>');
+        titles.forEach(function(title) {
+            var match = title.match(titleRegexp);
+            if (!match) return; // Skip if no match
 
-				var li = '<li><a href="#' + id + '">' + object.id + '</a></li>';
-				var i = 1;
+            var level = parseInt(match[1], 10);
+            var text = match[2].trim();
+            var id = generateUniqueId(text, ids);
 
-				if(!parentNode) {
-					$('div').append('<ul></ul>');
-					parentNode = $('div').children().first();
-					while(i<object.num) {
-						parentNode.append('<ul></ul>');
-						parentNode = parentNode.children().last();
-						i++;
-					}
-					parentNode.append(li);
-					parentNode = parentNode.children().last();
-				}else if(parentObject.num == object.num) {
-					parentNode.append(li);
-					parentNode = parentNode.children().last();
-				}else{
-					parentNode = $('div').children().first();
-					while(i<object.num){
-						parentNode.append('<ul></ul>');
-						parentNode = parentNode.children().last();
-						i++;
-					}
-					parentNode.append(li);
-				}
+            // Replace original heading with one that includes an ID
+            postContent = postContent.replace(title, `<h${level} id="${id}">${text}</h${level}>`);
 
-				parentObject = object;
+            // Create a list item for the TOC
+            var li = $('<li>').append($('<a>', { href: '#' + id }).text(text));
 
-			});
+            // Append to appropriate level in the TOC
+            appendToToc(level, li, $);
+        });
 
-			postContent = postContent.replace(tocRegexp, $.html());
-
-			data.postData.content = postContent;
-		}
+        // Insert the TOC into the content where [toc] is found
+        postContent = postContent.replace(tocRegexp, $.html());
+        data.postData.content = postContent;
 
         callback(null, data);
     };
+
+    function generateUniqueId(text, ids) {
+        let baseId = text.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+        let id = baseId;
+        let suffix = 1;
+        while (ids.includes(id)) {
+            id = `${baseId}-${suffix}`;
+            suffix++;
+        }
+        ids.push(id);
+        return id;
+    }
+
+    function appendToToc(level, li, $) {
+        let currentLevel = $('ul:last');
+        while (currentLevel.parentsUntil('.toc', 'ul').length >= level - 1) {
+            currentLevel = currentLevel.parent().closest('ul');
+        }
+
+        if (!currentLevel.length || currentLevel.parentsUntil('.toc', 'ul').length < level - 1) {
+            currentLevel.append($('<ul>').append(li));
+        } else {
+            currentLevel.append(li);
+        }
+    }
 
     module.exports = MarkdownToc;
 }(module));
