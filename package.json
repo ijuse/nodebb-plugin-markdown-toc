@@ -1,6 +1,6 @@
 {
   "name": "nodebb-plugin-markdown-toc",
-  "version": "0.0.1",
+  "version": "0.0.2",
   "description": "NodeBB plugin for show table of content",
   "main": "index.js",
   "scripts": {
